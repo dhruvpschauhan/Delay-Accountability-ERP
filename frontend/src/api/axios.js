@@ -16,9 +16,37 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor: handle 401 by clearing token
+const ensureUtc = (obj) => {
+  if (typeof obj === 'string') {
+    // Append Z to ISO 8601 strings that lack a timezone specifier
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(obj)) {
+      return obj + 'Z';
+    }
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(ensureUtc);
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const newObj = {};
+    for (const key in obj) {
+      if (Object.hasOwn(obj, key)) {
+        newObj[key] = ensureUtc(obj[key]);
+      }
+    }
+    return newObj;
+  }
+  return obj;
+};
+
+// Response interceptor: append Z to dates, handle 401 by clearing token
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (response.data) {
+      response.data = ensureUtc(response.data);
+    }
+    return response;
+  },
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('idas_token');

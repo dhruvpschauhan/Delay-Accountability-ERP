@@ -4,6 +4,7 @@ import {
   apiGetInvoice,
   apiCreateInvoice,
   apiRecordReceipt,
+  apiRecordReplacement,
   apiConfirmInspection,
   apiVerifyInvoice,
 } from '../api/endpoints';
@@ -39,6 +40,17 @@ export const useRecordReceipt = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ invoiceId, data }) => apiRecordReceipt(invoiceId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['invoice', variables.invoiceId] });
+    },
+  });
+};
+
+export const useRecordReplacement = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ invoiceId, data }) => apiRecordReplacement(invoiceId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['invoice', variables.invoiceId] });

@@ -23,6 +23,9 @@ export const apiCreateInvoice = (data) =>
 export const apiRecordReceipt = (invoiceId, data) =>
   api.post(`/invoices/${invoiceId}/material-receipt`, data).then((r) => r.data);
 
+export const apiRecordReplacement = (invoiceId, data) =>
+  api.post(`/invoices/${invoiceId}/replacement`, data).then((r) => r.data);
+
 export const apiConfirmInspection = (invoiceId, data) =>
   api.post(`/invoices/${invoiceId}/inspection`, data).then((r) => r.data);
 

@@ -10,6 +10,7 @@ import StageTimeline from '../../components/invoice/StageTimeline';
 import DelayBreakdown from '../../components/invoice/DelayBreakdown';
 import MaterialReceiptForm from '../../components/forms/MaterialReceiptForm';
 import InspectionForm from '../../components/forms/InspectionForm';
+import ReplacementForm from '../../components/forms/ReplacementForm';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ErrorAlert from '../../components/common/ErrorAlert';
 import { getStageConfig } from '../../utils/stageConfig';
@@ -17,7 +18,9 @@ import { formatCurrency, formatDate, liveDurationDays } from '../../utils/format
 
 const storeActions = {
   invoice_entry: { label: 'Record Material Receipt', form: 'receipt' },
+  replacement_processing: { label: 'Record Material Receipt', form: 'receipt' },
   inspection_summary: { label: 'Confirm Inspection', form: 'inspection' },
+  partial_firm_intimation: { label: 'Record Replacement', form: 'replacement' },
 };
 
 export default function InvoiceDetailPage() {
@@ -115,6 +118,12 @@ export default function InvoiceDetailPage() {
       />
       <InspectionForm
         open={openForm === 'inspection'}
+        onClose={() => setOpenForm(null)}
+        invoice={invoice}
+        onSuccess={(msg) => { setOpenForm(null); setSnackbar({ open: true, message: msg }); refetch(); }}
+      />
+      <ReplacementForm
+        open={openForm === 'replacement'}
         onClose={() => setOpenForm(null)}
         invoice={invoice}
         onSuccess={(msg) => { setOpenForm(null); setSnackbar({ open: true, message: msg }); refetch(); }}

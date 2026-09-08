@@ -71,6 +71,19 @@ def confirm_inspection(
         
     return invoice_workflow.confirm_inspection(db, invoice_id, current_user, inspection_in)
 
+@router.post("/{invoice_id}/replacement", response_model=schemas.InvoiceResponse)
+def record_replacement(
+    invoice_id: int,
+    replacement_in: schemas.ReplacementReceived,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Record Replacement Received from Firm (Stage 4.1)"""
+    if current_user.role != "store_officer":
+        raise HTTPException(status_code=403, detail="Only store officers can record replacements")
+        
+    return invoice_workflow.record_replacement(db, invoice_id, replacement_in, current_user)
+
 @router.post("/{invoice_id}/verify", response_model=schemas.InvoiceResponse)
 def verify_invoice(
     invoice_id: int,

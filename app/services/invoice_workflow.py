@@ -168,6 +168,15 @@ def confirm_inspection(db: Session, invoice_id: int, user: users.User, inspectio
     
     if not latest_receipt:
         raise HTTPException(status_code=400, detail="No material receipt found for this invoice.")
+        
+    if inspection_in:
+        latest_receipt.inspection_date = inspection_in.inspection_date
+        latest_receipt.pbg_acceptance_date = inspection_in.pbg_acceptance_date
+        latest_receipt.contract_agreement_date = inspection_in.contract_agreement_date
+        latest_receipt.acknowledgement_date = inspection_in.acknowledgement_date
+        latest_receipt.acceptance_type = inspection_in.acceptance_type
+        latest_receipt.inspection_notes = inspection_in.acceptance_notes
+        db.add(latest_receipt)
     
     # We close the inspection_summary stage
     close_current_stage(db, invoice)
@@ -182,6 +191,50 @@ def confirm_inspection(db: Session, invoice_id: int, user: users.User, inspectio
         open_new_stage(db, invoice, "partial_firm_intimation", "external_wait", None)
         invoice.current_owner_role = "external_firm"
         
+        # Start a ReplacementRound
+        round_number = db.query(workflow.ReplacementRound).filter(
+            workflow.ReplacementRound.invoice_id == invoice.id
+        ).count() + 1
+        
+        replacement_round = workflow.ReplacementRound(
+            invoice_id=invoice.id,
+            round_number=round_number,
+            intimated_at=get_now(),
+            intimated_by_user_id=user.id,
+            intimation_notes="Automatic round started due to partial or rejected inspection."
+        )
+        db.add(replacement_round)
+        
+    db.commit()
+    db.refresh(invoice)
+    return invoice
+
+def record_replacement(db: Session, invoice_id: int, replacement_in: schemas.ReplacementReceived, user: users.User):
+    """
+    Record replacement receipt from the firm.
+    """
+    invoice = _get_invoice_for_user(db, invoice_id, user)
+    
+    if invoice.current_stage != "partial_firm_intimation":
+        raise HTTPException(status_code=409, detail="Invoice is not awaiting firm replacement.")
+        
+    latest_round = db.query(workflow.ReplacementRound).filter(
+        workflow.ReplacementRound.invoice_id == invoice.id
+    ).order_by(workflow.ReplacementRound.round_number.desc()).first()
+    
+    if not latest_round:
+        raise HTTPException(status_code=400, detail="No active replacement round found.")
+        
+    latest_round.replacement_received_at = replacement_in.replacement_received_date
+    latest_round.replacement_quantity = replacement_in.replacement_quantity
+    latest_round.replacement_notes = replacement_in.replacement_notes
+    db.add(latest_round)
+    
+    close_current_stage(db, invoice)
+    # Give it back to the store officer to do material receipt for the replacement
+    open_new_stage(db, invoice, "replacement_processing", "internal", user.id)
+    invoice.current_owner_role = "store_officer"
+    
     db.commit()
     db.refresh(invoice)
     return invoice

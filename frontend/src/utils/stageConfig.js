@@ -95,6 +95,16 @@ export const STAGES = {
     icon: Payment,
     description: 'Payment released and recorded',
   },
+  replacement_processing: {
+    label: 'Replacement Processing',
+    shortLabel: 'Rep Process',
+    color: '#7b1fa2',
+    bgColor: '#f3e5f5',
+    owner: 'store_officer',
+    delayType: 'internal',
+    icon: Loop,
+    description: 'Store Officer processing replaced material',
+  },
 };
 
 export const getStageConfig = (stageName) =>
@@ -106,6 +116,6 @@ export const getStageConfig = (stageName) =>
     description: 'Unknown stage',
   };
 
-export const STORE_STAGES = ['invoice_entry', 'material_receipt', 'inspection_summary', 'forwarded_to_accounts'];
+export const STORE_STAGES = ['invoice_entry', 'material_receipt', 'inspection_summary', 'partial_firm_intimation', 'replacement_processing', 'forwarded_to_accounts'];
 export const ACCOUNTS_STAGES = ['accounts_verification', 'invoice_passed', 'payment_recorded'];
-export const EXTERNAL_STAGES = ['partial_firm_intimation', 'observation_correspondence'];
+export const EXTERNAL_STAGES = ['observation_correspondence'];
