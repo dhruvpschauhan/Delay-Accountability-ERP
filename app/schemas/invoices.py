@@ -67,6 +67,8 @@ class InspectionCreate(BaseModel):
     contract_agreement_date: Optional[date] = None
     acknowledgement_date: Optional[date] = None
     acceptance_type: str  # "full" or "partial"
+    partial_action: Optional[str] = None  # "replace" or "revise", only for partial
+    revised_amount: Optional[float] = None
     acceptance_notes: Optional[str] = None
 
 class InspectionConfirm(BaseModel):

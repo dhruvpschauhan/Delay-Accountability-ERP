@@ -187,24 +187,47 @@ def confirm_inspection(db: Session, invoice_id: int, user: users.User, inspectio
         open_new_stage(db, invoice, "forwarded_to_accounts", "handoff", user.id)
         invoice.current_owner_role = "accounts"
     else:
-        # MOVE TO partial_firm_intimation (AWAIT firm_response)
-        open_new_stage(db, invoice, "partial_firm_intimation", "external_wait", None)
-        invoice.current_owner_role = "external_firm"
-        
-        # Start a ReplacementRound
-        round_number = db.query(workflow.ReplacementRound).filter(
-            workflow.ReplacementRound.invoice_id == invoice.id
-        ).count() + 1
-        
-        replacement_round = workflow.ReplacementRound(
-            invoice_id=invoice.id,
-            round_number=round_number,
-            intimated_at=get_now(),
-            intimated_by_user_id=user.id,
-            intimation_notes="Automatic round started due to partial or rejected inspection."
-        )
-        db.add(replacement_round)
-        
+        if inspection_in and inspection_in.partial_action == "revise":
+            if not inspection_in.revised_amount or inspection_in.revised_amount <= 0:
+                raise HTTPException(status_code=400, detail="Revised amount must be greater than 0.")
+                
+            # Create InvoiceRevision
+            revision = workflow.InvoiceRevision(
+                invoice_id=invoice.id,
+                original_amount=invoice.invoice_amount,
+                revised_amount=inspection_in.revised_amount,
+                reason="Partial Acceptance Revision",
+                revised_at=get_now(),
+                revised_by_user_id=user.id,
+                revision_notes=inspection_in.acceptance_notes
+            )
+            db.add(revision)
+            
+            # Update invoice amount
+            invoice.invoice_amount = inspection_in.revised_amount
+            
+            # MOVE TO accounts_verification directly
+            open_new_stage(db, invoice, "forwarded_to_accounts", "handoff", user.id)
+            invoice.current_owner_role = "accounts"
+        else:
+            # MOVE TO partial_firm_intimation (AWAIT firm_response)
+            open_new_stage(db, invoice, "partial_firm_intimation", "external_wait", None)
+            invoice.current_owner_role = "external_firm"
+            
+            # Start a ReplacementRound
+            round_number = db.query(workflow.ReplacementRound).filter(
+                workflow.ReplacementRound.invoice_id == invoice.id
+            ).count() + 1
+            
+            replacement_round = workflow.ReplacementRound(
+                invoice_id=invoice.id,
+                round_number=round_number,
+                intimated_at=get_now(),
+                intimated_by_user_id=user.id,
+                intimation_notes="Automatic round started due to partial or rejected inspection."
+            )
+            db.add(replacement_round)
+            
     db.commit()
     db.refresh(invoice)
     return invoice
@@ -223,7 +246,15 @@ def record_replacement(db: Session, invoice_id: int, replacement_in: schemas.Rep
     ).order_by(workflow.ReplacementRound.round_number.desc()).first()
     
     if not latest_round:
-        raise HTTPException(status_code=400, detail="No active replacement round found.")
+        # Backward compatibility for invoices that entered this stage before ReplacementRound logic was added
+        latest_round = workflow.ReplacementRound(
+            invoice_id=invoice.id,
+            round_number=1,
+            intimated_at=invoice.current_stage_entered_at or get_now(),
+            intimated_by_user_id=user.id,
+            intimation_notes="Backward compatibility round creation."
+        )
+        db.add(latest_round)
         
     latest_round.replacement_received_at = replacement_in.replacement_received_date
     latest_round.replacement_quantity = replacement_in.replacement_quantity
