@@ -1,13 +1,56 @@
 from datetime import datetime, timezone
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from typing import Optional
 from fastapi import HTTPException, status
 from app.models import invoices as models
 from app.models import events
 from app.models import workflow
+from app.models import users
 from app.schemas import invoices as schemas
 
 def get_now() -> datetime:
     return datetime.now(timezone.utc)
+
+def _get_invoice_for_user(db: Session, invoice_id: int, user: users.User) -> models.Invoice:
+    invoice = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if user.plant_id and invoice.plant_id != user.plant_id:
+        raise HTTPException(status_code=403, detail="Not authorized to access invoices for this plant")
+    return invoice
+
+def get_invoices(db: Session, user: users.User, skip: int = 0, limit: int = 100, status: Optional[str] = None, stage: Optional[str] = None):
+    """Fetch all invoices (with multi-tenant isolation)"""
+    query = db.query(models.Invoice)
+    
+    # REPOSITORY LOGIC: Multi-tenant filtering
+    if user.plant_id:
+        query = query.filter(models.Invoice.plant_id == user.plant_id)
+        
+    if status:
+        query = query.filter(models.Invoice.status == status)
+    if stage:
+        query = query.filter(models.Invoice.current_stage == stage)
+        
+    return query.order_by(models.Invoice.created_at.desc()).offset(skip).limit(limit).all()
+
+def get_invoice_detail(db: Session, invoice_id: int, user: users.User):
+    """Fetch specific invoice with full audit trail"""
+    query = db.query(models.Invoice).filter(models.Invoice.id == invoice_id)
+    
+    # REPOSITORY LOGIC: Multi-tenant filtering
+    if user.plant_id:
+        query = query.filter(models.Invoice.plant_id == user.plant_id)
+        
+    # REPOSITORY LOGIC: Eagerly load the audit trail
+    invoice = query.options(joinedload(models.Invoice.stage_events)).first()
+    
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+        
+    # Sort the events by entered_at descending (newest first)
+    invoice.stage_events.sort(key=lambda x: x.entered_at, reverse=True)
+    return invoice
 
 def close_current_stage(db: Session, invoice: models.Invoice):
     """Finds the open stage_event and closes it, calculating duration."""
@@ -20,13 +63,13 @@ def close_current_stage(db: Session, invoice: models.Invoice):
     if current_event:
         now = get_now()
         current_event.exited_at = now
-        delta = now - current_event.entered_at
+        delta = now.replace(tzinfo=None) - current_event.entered_at.replace(tzinfo=None)
         current_event.duration_hours = round(delta.total_seconds() / 3600, 2)
         db.add(current_event)
 
-def open_new_stage(db: Session, invoice: models.Invoice, stage_name: str, delay_type: str, acted_by_user_id: int | None = None):
+def open_new_stage(db: Session, invoice: models.Invoice, stage_name: str, delay_type: str, acted_by_user_id: int | None = None, event_time: datetime | None = None):
     """Creates a new stage_event."""
-    now = get_now()
+    now = event_time or get_now()
     new_event = events.StageEvent(
         invoice_id=invoice.id,
         stage_name=stage_name,
@@ -41,11 +84,11 @@ def open_new_stage(db: Session, invoice: models.Invoice, stage_name: str, delay_
     db.add(invoice)
     return new_event
 
-def create_invoice(db: Session, invoice_in: schemas.InvoiceCreate, user_id: int, plant_id: int):
+def create_invoice(db: Session, invoice_in: schemas.InvoiceCreate, user: users.User):
     # Check if duplicate PO + invoice combination exists
     # REPOSITORY LOGIC: Checking for duplicate invoices in the database
     existing = db.query(models.Invoice).filter(
-        models.Invoice.plant_id == plant_id,
+        models.Invoice.plant_id == user.plant_id,
         models.Invoice.po_number == invoice_in.po_number,
         models.Invoice.invoice_number == invoice_in.invoice_number
     ).first()
@@ -55,9 +98,9 @@ def create_invoice(db: Session, invoice_in: schemas.InvoiceCreate, user_id: int,
         
     now = get_now()
     db_invoice = models.Invoice(
-        plant_id=plant_id,
+        plant_id=user.plant_id,
         firm_id=invoice_in.firm_id,
-        created_by_user_id=user_id,
+        created_by_user_id=user.id,
         po_number=invoice_in.po_number,
         po_date=invoice_in.po_date,
         invoice_number=invoice_in.invoice_number,
@@ -78,30 +121,29 @@ def create_invoice(db: Session, invoice_in: schemas.InvoiceCreate, user_id: int,
         invoice=db_invoice, 
         stage_name="invoice_entry", 
         delay_type="internal", 
-        acted_by_user_id=user_id
+        acted_by_user_id=user.id,
+        event_time=now
     )
     
     db.commit()
     db.refresh(db_invoice)
     return db_invoice
 
-def record_material_receipt(db: Session, invoice_id: int, receipt_in: schemas.MaterialReceiptCreate, user_id: int):
+def record_material_receipt(db: Session, invoice_id: int, receipt_in: schemas.MaterialReceiptCreate, user: users.User):
     # REPOSITORY LOGIC: Fetching the invoice from the database
-    invoice = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found")
+    invoice = _get_invoice_for_user(db, invoice_id, user)
         
     if invoice.current_stage not in ["invoice_entry", "replacement_processing"]:
         raise HTTPException(status_code=409, detail="Invoice is not in a valid stage for material receipt.")
         
     close_current_stage(db, invoice)
-    open_new_stage(db, invoice, "material_receipt", "internal", user_id)
+    open_new_stage(db, invoice, "inspection_summary", "internal", user.id)
     
     receipt = workflow.MaterialReceipt(
         invoice_id=invoice.id,
         receipt_date=receipt_in.receipt_date,
         quantity_received=receipt_in.quantity_received,
-        received_by_user_id=user_id,
+        received_by_user_id=user.id,
         receipt_notes=receipt_in.receipt_notes
     )
     db.add(receipt)
@@ -109,13 +151,13 @@ def record_material_receipt(db: Session, invoice_id: int, receipt_in: schemas.Ma
     db.refresh(invoice)
     return invoice
 
-def confirm_inspection(db: Session, invoice_id: int, user_id: int):
+def confirm_inspection(db: Session, invoice_id: int, user: users.User, inspection_in: schemas.InspectionCreate = None):
     """
     Branching logic AFTER inspection.
     """
     # REPOSITORY LOGIC: Fetching the invoice from the database
-    invoice = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
-    if not invoice or invoice.current_stage != "inspection_summary":
+    invoice = _get_invoice_for_user(db, invoice_id, user)
+    if invoice.current_stage != "inspection_summary":
         raise HTTPException(status_code=409, detail="Invoice not in inspection_summary stage.")
         
     # Get the latest material receipt to check the acceptance_type
@@ -124,13 +166,16 @@ def confirm_inspection(db: Session, invoice_id: int, user_id: int):
         workflow.MaterialReceipt.invoice_id == invoice.id
     ).order_by(workflow.MaterialReceipt.id.desc()).first()
     
+    if not latest_receipt:
+        raise HTTPException(status_code=400, detail="No material receipt found for this invoice.")
+    
     # We close the inspection_summary stage
     close_current_stage(db, invoice)
     
     # Branching Logic
     if latest_receipt.acceptance_type == "full":
         # MOVE TO accounts_verification (forwarded_to_accounts)
-        open_new_stage(db, invoice, "forwarded_to_accounts", "handoff", user_id)
+        open_new_stage(db, invoice, "forwarded_to_accounts", "handoff", user.id)
         invoice.current_owner_role = "accounts"
     else:
         # MOVE TO partial_firm_intimation (AWAIT firm_response)
@@ -141,29 +186,34 @@ def confirm_inspection(db: Session, invoice_id: int, user_id: int):
     db.refresh(invoice)
     return invoice
 
-def verify_invoice(db: Session, invoice_id: int, user_id: int, observations_found: bool):
+def verify_invoice(db: Session, invoice_id: int, user: users.User, observations_found: bool):
     """
     Branching logic AFTER accounts_verification.
     """
     # REPOSITORY LOGIC: Fetching the invoice from the database
-    invoice = db.query(models.Invoice).filter(models.Invoice.id == invoice_id).first()
-    if not invoice or invoice.current_stage != "accounts_verification":
-        raise HTTPException(status_code=409, detail="Invoice not in accounts_verification stage.")
+    invoice = _get_invoice_for_user(db, invoice_id, user)
+    if invoice.current_stage not in ["accounts_verification", "forwarded_to_accounts"]:
+        raise HTTPException(status_code=409, detail="Invoice not in accounts_verification or forwarded_to_accounts stage.")
         
     close_current_stage(db, invoice)
     now = get_now()
     
     if not observations_found:
         # MOVE TO invoice_passed
-        open_new_stage(db, invoice, "invoice_passed", "internal", user_id)
+        open_new_stage(db, invoice, "invoice_passed", "internal", user.id)
         invoice.current_owner_role = "accounts"
     else:
-        # CREATE observation_rounds row (round 1)
+        from sqlalchemy.sql import func
+        max_round = db.query(func.max(workflow.ObservationRound.round_number)).filter(
+            workflow.ObservationRound.invoice_id == invoice.id
+        ).scalar() or 0
+
+        # CREATE observation_rounds row
         new_round = workflow.ObservationRound(
             invoice_id=invoice.id,
-            round_number=1, 
+            round_number=max_round + 1, 
             raised_at=now,
-            raised_by_user_id=user_id,
+            raised_by_user_id=user.id,
             target="firm" # placeholder
         )
         db.add(new_round)

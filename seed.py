@@ -31,6 +31,15 @@ def seed_db():
         )
         db.add(store_officer)
         db.add(accounts_officer)
+        
+        admin_user = users.User(
+            name="HQ Administrator",
+            email="admin@hq.local",
+            password_hash=get_password_hash("secure_password"),
+            role="admin",
+            plant_id=None
+        )
+        db.add(admin_user)
         db.commit()
     
     if not db.query(firms.Firm).first():

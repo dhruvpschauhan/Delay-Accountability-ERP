@@ -20,5 +20,5 @@ class StageEvent(Base):
     notes = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    invoice = relationship("Invoice")
+    invoice = relationship("Invoice", back_populates="stage_events")
     actor = relationship("User")

@@ -36,3 +36,4 @@ class Invoice(Base):
     plant = relationship("Plant")
     firm = relationship("Firm")
     creator = relationship("User")
+    stage_events = relationship("StageEvent", back_populates="invoice", cascade="all, delete-orphan")

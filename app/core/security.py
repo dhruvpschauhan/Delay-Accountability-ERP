@@ -25,27 +25,33 @@ def get_password_hash(password: str) -> str:
     """
     return pwd_context.hash(password)
 
-def create_access_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(subject: Union[str, Any], extra_claims: dict = None, expires_delta: Optional[timedelta] = None) -> str:
     """
     Generates a secure JSON Web Token (JWT) that acts as the user's "digital ID card".
     
     Args:
-        subject: The data payload we want to embed in the token (e.g., a JSON string containing the user's ID, name, role).
+        subject: The primary identifier (e.g., user ID) stored in the 'sub' claim.
+        extra_claims: Optional dict of additional claims (id, name, role, plant_id) 
+                      embedded as top-level JWT fields for easy frontend decoding.
         expires_delta: Optional duration for how long the token should remain valid.
         
     Returns:
         The encoded JWT string that the frontend client will use in the Authorization header.
     """
-    # 1. Determine exactly when this token should expire (defaults to ACCESS_TOKEN_EXPIRE_MINUTES from config)
+    # 1. Determine exactly when this token should expire
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         
-    # 2. Prepare the payload containing the expiration time ('exp') and the user data ('sub' or subject)
+    # 2. Build the payload with expiration and subject
     to_encode = {"exp": expire, "sub": str(subject)}
     
-    # 3. Cryptographically sign the token using our SECRET_KEY so that clients cannot tamper with the data inside it
+    # 3. Merge any extra claims (id, name, role, plant_id) as top-level fields
+    if extra_claims:
+        to_encode.update(extra_claims)
+    
+    # 4. Cryptographically sign the token using our SECRET_KEY
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     
     return encoded_jwt

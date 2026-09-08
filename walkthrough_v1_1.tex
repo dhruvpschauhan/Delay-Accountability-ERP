@@ -1,0 +1,59 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\geometry{top=1in, bottom=1in, left=1in, right=1in}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{tcolorbox}
+\usepackage{enumitem}
+
+% Custom Colors
+\definecolor{primary}{RGB}{33, 150, 243}
+\definecolor{success}{RGB}{76, 175, 80}
+\definecolor{bg}{RGB}{245, 245, 245}
+\definecolor{codebg}{RGB}{240, 240, 240}
+
+% Formatting 
+\titleformat{\section}{\Large\bfseries\color{primary}}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{1em}{}
+
+% Custom command for inline code
+\newcommand{\code}[1]{\colorbox{codebg}{\texttt{#1}}}
+
+\title{\textbf{Delay Accountability ERP}\\ \Large V1.1 Dashboard Endpoints Implementation}
+\author{Internal Development Team}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{tcolorbox}[colback=success!10, colframe=success, title=Executive Summary]
+We have successfully implemented the \code{GET} endpoints to power the frontend dashboard! The application now allows users to safely view their invoices and track the full audit history with rock-solid security.
+\end{tcolorbox}
+
+\vspace{1em}
+
+\section{Multi-Tenant List View (\code{GET /invoices/})}
+This endpoint returns a list of invoices with pagination, filtering, and cross-plant isolation.
+
+\begin{itemize}[leftmargin=*, itemsep=0.8em]
+    \item \textbf{Store/Accounts Officers}: When they call this endpoint, the database query is forcefully scoped to their specific \code{plant\_id}. They will never see data from other plants.
+    \item \textbf{HQ / Admins}: Because their \code{plant\_id} is null, the query bypasses the plant restriction and returns all invoices globally across the organization.
+    \item \textbf{Filtering Options}: Added optional \code{status} and \code{stage} query parameters so the frontend can easily build "Active Invoices" or "Pending Verification" tables dynamically.
+\end{itemize}
+
+\section{Detailed Audit Trail (\code{GET /invoices/\{invoice\_id\}})}
+This endpoint returns the complete details of a specific invoice.
+
+\begin{itemize}[leftmargin=*, itemsep=0.8em]
+    \item \textbf{Eager Loading Optimization}: Instead of making the database execute 10 separate queries to fetch the history of the invoice (the N+1 query problem), we utilized SQLAlchemy's \code{joinedload(models.Invoice.stage\_events)}. This pulls the entire audit trail in a single, lightning-fast SQL query.
+    \item \textbf{Ordered Timeline}: The \code{stage\_events} are automatically sorted descending by \code{entered\_at}, ensuring the frontend can instantly render a chronological timeline showing exactly when it entered each stage and how long it took.
+\end{itemize}
+
+\section{Testing Verification}
+We expanded our automated Python HTTP testing script to simulate a Plant 1 Officer, a Plant 2 Officer, and an HQ Admin simultaneously hitting the dashboard. The tests passed flawlessly: Plant 1 only saw Plant 1 data, Plant 2 only saw Plant 2 data, and HQ saw everything!
+
+\end{document}

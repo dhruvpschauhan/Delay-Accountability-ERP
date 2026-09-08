@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.users import User
 from app.core.config import settings
-import json
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
@@ -18,15 +17,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     )
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        sub = payload.get("sub")
-        if sub is None:
+        user_id = payload.get("id")
+        if user_id is None:
             raise credentials_exception
-        token_data = json.loads(sub)
     except JWTError:
         raise credentials_exception
     
     # REPOSITORY LOGIC: Fetching user by ID from the database during authentication
-    user = db.query(User).filter(User.id == token_data.get("id")).first()
+    user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise credentials_exception
     return user
