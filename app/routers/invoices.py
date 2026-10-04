@@ -7,23 +7,34 @@ from app.models.users import User
 from app.dependencies import get_current_active_user
 from app.services import invoice_workflow
 
+# 1. APIRouter: This is like a "mini FastAPI app". Instead of putting all our routes in main.py, 
+# we group invoice-related routes here, and then "include" this router in main.py.
 router = APIRouter()
 
+# 2. @router.get: This decorator tells FastAPI that any HTTP GET request to "/invoices/" 
+# should be handled by this function.
+# 3. response_model: This tells FastAPI to automatically convert the raw SQLAlchemy objects 
+# returned by the workflow function into JSON, using the Pydantic schema `InvoiceResponse`.
 @router.get("/", response_model=List[schemas.InvoiceResponse])
 def read_invoices(
     skip: int = 0,
     limit: int = 100,
     status: Optional[str] = None,
     stage: Optional[str] = None,
+    # 4. Dependency Injection: FastAPI automatically runs `get_db` and provides a database connection.
     db: Session = Depends(get_db),
+    # 5. Security: FastAPI automatically extracts the JWT token, validates it, and provides the current user!
+    # If the user is not logged in, this route will automatically throw a 401 Unauthorized error.
     current_user: User = Depends(get_current_active_user)
 ):
     """Get all invoices (Filtered by plant access)"""
+    # 6. Delegation: Notice how thin this router is? It doesn't do any complex DB queries. 
+    # It just delegates the work to the "invoice_workflow" service layer.
     return invoice_workflow.get_invoices(db, current_user, skip, limit, status, stage)
 
 @router.get("/{invoice_id}", response_model=schemas.InvoiceDetailResponse)
 def read_invoice_detail(
-    invoice_id: int,
+    invoice_id: int, # FastAPI automatically parses this ID from the URL path (e.g., /invoices/5)
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -32,11 +43,17 @@ def read_invoice_detail(
 
 @router.post("/", response_model=schemas.InvoiceResponse, status_code=status.HTTP_201_CREATED)
 def create_invoice(
+    # 7. Pydantic Validation: FastAPI reads the incoming HTTP JSON body. 
+    # If it doesn't strictly match the `InvoiceCreate` schema (e.g., missing a field), 
+    # FastAPI automatically throws a 422 Validation Error. You never have to manually parse JSON!
     invoice_in: schemas.InvoiceCreate, 
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_active_user)
 ):
     """Master Data Entry & Invoice Entry (Stage 1 & 2)"""
+    
+    # 8. RBAC (Role-Based Access Control): We manually check if this authenticated user 
+    # is actually allowed to perform this specific action.
     if current_user.role != "store_officer":
         raise HTTPException(status_code=403, detail="Only store officers can create invoices")
     
@@ -96,3 +113,29 @@ def verify_invoice(
         raise HTTPException(status_code=403, detail="Only accounts officers can verify invoices")
         
     return invoice_workflow.verify_invoice(db, invoice_id, current_user, verify_in.observations_found)
+
+@router.post("/{invoice_id}/payment", response_model=schemas.InvoiceResponse)
+def record_payment(
+    invoice_id: int,
+    payment_in: schemas.RecordPayment,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Record Payment (Final Stage)"""
+    if current_user.role != "accounts_officer":
+        raise HTTPException(status_code=403, detail="Only accounts officers can record payments")
+        
+    return invoice_workflow.record_payment(db, invoice_id, payment_in, current_user)
+
+@router.post("/{invoice_id}/observation/reply", response_model=schemas.InvoiceResponse)
+def proxy_observation_reply(
+    invoice_id: int,
+    reply_in: schemas.ReplyObservation,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Proxy Firm Reply (Accounts Officer)"""
+    if current_user.role != "accounts_officer":
+        raise HTTPException(status_code=403, detail="Only accounts officers can record firm replies")
+        
+    return invoice_workflow.reply_to_observation(db, invoice_id, current_user, reply_in)

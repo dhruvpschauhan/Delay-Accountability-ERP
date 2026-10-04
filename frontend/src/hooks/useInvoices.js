@@ -7,6 +7,8 @@ import {
   apiRecordReplacement,
   apiConfirmInspection,
   apiVerifyInvoice,
+  apiRecordPayment,
+  apiReplyObservation,
 } from '../api/endpoints';
 
 export const useInvoices = (filters = {}) => {
@@ -73,6 +75,28 @@ export const useVerifyInvoice = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ invoiceId, data }) => apiVerifyInvoice(invoiceId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['invoice', variables.invoiceId] });
+    },
+  });
+};
+
+export const useRecordPayment = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ invoiceId, data }) => apiRecordPayment(invoiceId, data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['invoice', variables.invoiceId] });
+    },
+  });
+};
+
+export const useReplyObservation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ invoiceId, data }) => apiReplyObservation(invoiceId, data),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['invoices'] });
       queryClient.invalidateQueries({ queryKey: ['invoice', variables.invoiceId] });

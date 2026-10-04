@@ -270,6 +270,37 @@ def record_replacement(db: Session, invoice_id: int, replacement_in: schemas.Rep
     db.refresh(invoice)
     return invoice
 
+def record_payment(db: Session, invoice_id: int, payment_in: schemas.RecordPayment, user: users.User):
+    """
+    Record payment released by the Accounts Officer.
+    """
+    invoice = _get_invoice_for_user(db, invoice_id, user)
+    
+    if invoice.current_stage != "invoice_passed":
+        raise HTTPException(status_code=409, detail="Invoice is not passed, cannot record payment.")
+        
+    invoice_passed_record = db.query(workflow.InvoicePassing).filter(workflow.InvoicePassing.invoice_id == invoice_id).first()
+    if invoice_passed_record:
+        invoice_passed_record.payment_date = payment_in.payment_date
+        invoice_passed_record.payment_method = payment_in.payment_method
+        invoice_passed_record.reference_number = payment_in.reference_number
+        db.add(invoice_passed_record)
+    
+    close_current_stage(db, invoice)
+    
+    # MOVE TO payment_recorded
+    open_new_stage(db, invoice, "payment_recorded", "internal", user.id)
+    invoice.current_owner_role = "accounts"
+    invoice.status = "closed"
+    invoice.closed_at = get_now()
+    
+    # Immediately close the payment_recorded stage event so it accumulates 0 duration
+    close_current_stage(db, invoice)
+    
+    db.commit()
+    db.refresh(invoice)
+    return invoice
+
 def verify_invoice(db: Session, invoice_id: int, user: users.User, observations_found: bool):
     """
     Branching logic AFTER accounts_verification.
@@ -306,6 +337,43 @@ def verify_invoice(db: Session, invoice_id: int, user: users.User, observations_
         open_new_stage(db, invoice, "observation_correspondence", "external_wait", None)
         invoice.current_owner_role = "external_firm"
         
+    db.commit()
+    db.refresh(invoice)
+    return invoice
+
+def reply_to_observation(db: Session, invoice_id: int, user: users.User, reply_in: schemas.ReplyObservation):
+    """
+    Proxy logic for Accounts Officer to record firm's reply to an observation
+    and pull the invoice back out of the observation_correspondence dead state.
+    """
+    invoice = _get_invoice_for_user(db, invoice_id, user)
+    
+    if invoice.current_stage != "observation_correspondence":
+        raise HTTPException(status_code=409, detail="Invoice is not in observation_correspondence stage.")
+        
+    # Find the latest open observation round
+    from sqlalchemy import desc
+    latest_round = db.query(workflow.ObservationRound).filter(
+        workflow.ObservationRound.invoice_id == invoice.id,
+        workflow.ObservationRound.resolved_at.is_(None)
+    ).order_by(desc(workflow.ObservationRound.round_number)).first()
+    
+    if not latest_round:
+        raise HTTPException(status_code=404, detail="No active observation round found for this invoice.")
+        
+    latest_round.replied_at = reply_in.reply_received_date
+    latest_round.reply_notes = reply_in.reply_notes
+    latest_round.resolved_at = get_now()
+    latest_round.resolved_by_user_id = user.id
+    
+    db.add(latest_round)
+    
+    close_current_stage(db, invoice)
+    
+    # MOVE BACK TO accounts_verification
+    open_new_stage(db, invoice, "accounts_verification", "internal", user.id)
+    invoice.current_owner_role = "accounts"
+    
     db.commit()
     db.refresh(invoice)
     return invoice

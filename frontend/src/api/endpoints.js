@@ -31,3 +31,12 @@ export const apiConfirmInspection = (invoiceId, data) =>
 
 export const apiVerifyInvoice = (invoiceId, data) =>
   api.post(`/invoices/${invoiceId}/verify`, data).then((r) => r.data);
+
+export const apiPassInvoice = (invoiceId, data) =>
+  api.post(`/invoices/${invoiceId}/pass`, data).then((r) => r.data);
+
+export const apiRecordPayment = (invoiceId, data) =>
+  api.post(`/invoices/${invoiceId}/payment`, data).then((r) => r.data);
+
+export const apiReplyObservation = (invoiceId, data) =>
+  api.post(`/invoices/${invoiceId}/observation/reply`, data).then((r) => r.data);

@@ -9,6 +9,8 @@ import InvoiceStatusChip from '../../components/invoice/InvoiceStatusChip';
 import StageTimeline from '../../components/invoice/StageTimeline';
 import DelayBreakdown from '../../components/invoice/DelayBreakdown';
 import VerifyInvoiceForm from '../../components/forms/VerifyInvoiceForm';
+import PaymentForm from '../../components/forms/PaymentForm';
+import ObservationReplyForm from '../../components/forms/ObservationReplyForm';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ErrorAlert from '../../components/common/ErrorAlert';
 import { getStageConfig } from '../../utils/stageConfig';
@@ -17,6 +19,8 @@ import { formatCurrency, formatDate, liveDurationDays } from '../../utils/format
 const accountsActions = {
   forwarded_to_accounts: { label: 'Start Verification', form: 'verify' },
   accounts_verification: { label: 'Submit Verification', form: 'verify' },
+  invoice_passed: { label: 'Record Payment', form: 'payment' },
+  observation_correspondence: { label: "Record Firm's Reply", form: 'observation_reply' },
 };
 
 export default function InvoiceDetailPage() {
@@ -71,9 +75,9 @@ export default function InvoiceDetailPage() {
               ) : (
                 <Box sx={{ mt: 2 }}>
                   <Alert severity="info" variant="outlined">
-                    {invoice.current_stage === 'invoice_passed'
-                      ? 'Invoice passed. Payment recording coming soon.'
-                      : "Waiting on another department — no action needed from you right now."}
+                    {invoice.current_stage === 'payment_recorded' 
+                      ? 'Payment has been officially recorded. This invoice is complete.'
+                      : 'Waiting on another department — no action needed from you right now.'}
                   </Alert>
                 </Box>
               )}
@@ -101,6 +105,18 @@ export default function InvoiceDetailPage() {
 
       <VerifyInvoiceForm
         open={openForm === 'verify'}
+        onClose={() => setOpenForm(null)}
+        invoice={invoice}
+        onSuccess={(msg) => { setOpenForm(null); setSnackbar({ open: true, message: msg }); refetch(); }}
+      />
+      <PaymentForm
+        open={openForm === 'payment'}
+        onClose={() => setOpenForm(null)}
+        invoice={invoice}
+        onSuccess={(msg) => { setOpenForm(null); setSnackbar({ open: true, message: msg }); refetch(); }}
+      />
+      <ObservationReplyForm
+        open={openForm === 'observation_reply'}
         onClose={() => setOpenForm(null)}
         invoice={invoice}
         onSuccess={(msg) => { setOpenForm(null); setSnackbar({ open: true, message: msg }); refetch(); }}

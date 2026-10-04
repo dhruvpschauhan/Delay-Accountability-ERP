@@ -12,7 +12,7 @@ function computeDelays(stageEvents) {
   stageEvents.forEach((event) => {
     let hours = event.duration_hours || 0;
     // If this is the current open stage, compute live duration
-    if (event.exited_at === null && event.entered_at) {
+    if (event.exited_at === null && event.entered_at && event.stage_name !== 'payment_recorded') {
       hours = (Date.now() - new Date(event.entered_at).getTime()) / (1000 * 60 * 60);
     }
 

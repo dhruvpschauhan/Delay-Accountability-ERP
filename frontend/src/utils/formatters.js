@@ -15,6 +15,7 @@ export const formatDateTime = (isoString) =>
 
 export const formatDuration = (hours) => {
   if (!hours && hours !== 0) return '—';
+  if (hours > 0 && hours < 1) return '< 1 hr';
   const days = Math.floor(hours / 24);
   const remainingHours = Math.round(hours % 24);
   if (days === 0) return `${remainingHours} hrs`;

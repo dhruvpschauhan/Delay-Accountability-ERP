@@ -1,3 +1,5 @@
 # Rules
 
 - **Git Push Shortcut**: Whenever the user writes the exact phrase "gitty", it means they want you to execute a full git workflow: stage all current changes (`git add .`), write a concise, appropriate commit summary reflecting the recent work (`git commit -m "..."`), and push to GitHub (`git push`).
+- **Feature Tracking**: Whenever an advanced, enterprise-grade, or scalable feature is discussed, conceptualized, or deferred for the future, automatically document it in the `C:\Users\Dell\.gemini\antigravity-ide\brain\c631fa0b-caa0-467a-8643-a355b1f4f4a3\future_enhancements.md` artifact to build a comprehensive interview prep guide.
+- **Bug Tracking**: Whenever a significant bug or crash is encountered and resolved (especially involving complex system integrations like React + FastAPI + SQLAlchemy), automatically document its root cause, symptoms, and technical fix in the `C:\Users\Dell\.gemini\antigravity-ide\brain\c631fa0b-caa0-467a-8643-a355b1f4f4a3\bug_chronicles.md` artifact to help build an interview prep guide.
