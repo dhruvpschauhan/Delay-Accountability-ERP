@@ -23,4 +23,4 @@ app.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the Delay Accountability ERP API"}
+    return {"message": "Welcome to the Delay Accountability ERP API. The backend is running perfectly!"}

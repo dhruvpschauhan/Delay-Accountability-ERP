@@ -8,3 +8,6 @@ pyjwt
 passlib[bcrypt]
 python-multipart
 python-dotenv
+gradio
+email-validator
+redis

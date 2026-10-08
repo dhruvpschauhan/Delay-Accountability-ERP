@@ -6,6 +6,7 @@ from app.schemas import invoices as schemas
 from app.models.users import User
 from app.dependencies import get_current_active_user
 from app.services import invoice_workflow
+from app.core import cache
 
 # 1. APIRouter: This is like a "mini FastAPI app". Instead of putting all our routes in main.py, 
 # we group invoice-related routes here, and then "include" this router in main.py.
@@ -28,9 +29,21 @@ def read_invoices(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get all invoices (Filtered by plant access)"""
-    # 6. Delegation: Notice how thin this router is? It doesn't do any complex DB queries. 
-    # It just delegates the work to the "invoice_workflow" service layer.
-    return invoice_workflow.get_invoices(db, current_user, skip, limit, status, stage)
+    cache_key = f"invoices:plant_{current_user.plant_id}:skip_{skip}:limit_{limit}:status_{status}:stage_{stage}"
+    
+    # 1. Try to fetch from Redis Cache first
+    cached_data = cache.get_cache(cache_key)
+    if cached_data:
+        return cached_data
+        
+    # 2. Cache Miss: Fetch from SQLite DB
+    db_invoices = invoice_workflow.get_invoices(db, current_user, skip, limit, status, stage)
+    
+    # 3. Serialize and save to Redis for next time
+    serialized_invoices = [schemas.InvoiceResponse.model_validate(inv).model_dump(mode='json') for inv in db_invoices]
+    cache.set_cache(cache_key, serialized_invoices)
+    
+    return db_invoices
 
 @router.get("/{invoice_id}", response_model=schemas.InvoiceDetailResponse)
 def read_invoice_detail(
@@ -60,7 +73,12 @@ def create_invoice(
     if not current_user.plant_id:
         raise HTTPException(status_code=400, detail="User must be assigned to a plant")
         
-    return invoice_workflow.create_invoice(db, invoice_in, current_user)
+    new_invoice = invoice_workflow.create_invoice(db, invoice_in, current_user)
+    
+    # Invalidate the cache so the dashboard fetches the fresh data!
+    cache.invalidate_cache(f"invoices:plant_{current_user.plant_id}:*")
+    
+    return new_invoice
 
 @router.post("/{invoice_id}/material-receipt", response_model=schemas.InvoiceResponse)
 def record_material_receipt(
