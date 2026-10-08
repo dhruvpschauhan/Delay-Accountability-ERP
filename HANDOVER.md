@@ -35,6 +35,18 @@ The codebase has been prepped for free-tier hosting:
   - `app.py` has been created in the root directory. It mounts a dummy Gradio UI at `/gradio` and serves the core FastAPI application at the root (`/`), bypassing the Docker requirement and utilizing the free Gradio SDK.
   - CORS in `app/main.py` is configured to accept Vercel traffic (`allow_origin_regex=r"https://.*\.vercel\.app"`).
 
-## 5. How to Run Locally
-1. Backend: `.\venv\Scripts\Activate.ps1; uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload`
-2. Frontend: `cd frontend; npm run dev`
+## 5. How to Run Locally on a New PC
+**Backend Setup**:
+1. Create a fresh virtual environment: `python -m venv venv`
+2. Activate it: `.\venv\Scripts\Activate.ps1` (Windows) or `source venv/bin/activate` (Mac/Linux)
+3. Install dependencies: `pip install -r requirements.txt`
+4. **CRITICAL**: Because `.env` is ignored by Git, you must create a new `.env` file in the root directory containing your secrets:
+   ```env
+   SECRET_KEY=my_super_secret_key_123
+   ```
+5. Run the server: `uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload`
+
+**Frontend Setup**:
+1. Open a new terminal and navigate to the frontend folder: `cd frontend`
+2. Install node modules: `npm install`
+3. Run the development server: `npm run dev`
